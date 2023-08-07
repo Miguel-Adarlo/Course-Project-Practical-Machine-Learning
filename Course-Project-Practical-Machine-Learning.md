@@ -401,17 +401,6 @@ predictRFTest
     ##  [1] B A B A A E D B A A B C B A E E A B B B
     ## Levels: A B C D E
 
-## Appendix
-
-1.  Correlation Matrix Visualization
-
-``` r
-corrPlot <- cor(trainData[, -length(names(trainData))])
-corrplot(corrPlot, method="color")
-```
-
-![](Course-Project-Practical-Machine-Learning_files/figure-gfm/corrmatix-1.png)<!-- -->
-
 ## Acknowledgement:
 
 Data came from:
