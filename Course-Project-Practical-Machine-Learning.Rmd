@@ -1,0 +1,181 @@
+---
+title: 'Course Project: Practical Machine Learning'
+author: "Miguel Adarlo"
+date: "2023-08-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+With the rise of wearable fitness trackers such as Jawbone Up, Nike FuelBand, and Fitbit, it is possible to obtain data regarding personal activity. The goal of this project is to determine the exercise done from data picked up by accelerometers attached to the belt, forearm, arm, and dumbells.
+
+## Data Loading
+
+``` {r libraries used, message = FALSE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(corrplot)
+library(rattle)
+library(gbm)
+```
+
+``` {r download data}
+trainUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainFile <- "./pml-training.csv"
+testFile  <- "./pml-testing.csv"
+if (!file.exists(trainFile)) {
+  download.file(trainUrl, destfile=trainFile, method="curl")
+}
+if (!file.exists(testFile)) {
+  download.file(testUrl, destfile=testFile, method="curl")
+}
+```
+
+``` {r load data into dataframe}
+trainSet <- read.csv("pml-training.csv")
+testSet <- read.csv("pml-testing.csv")
+dim(trainSet)
+dim(testSet)
+```
+
+First, the libraries were loaded and the required data for the project were downloaded. Afterwards, the datasets were loaded into DataFrames. From the dimensions of the datasets, the training set has 19622 entries, with 160 fields. The test set, meanwhile, has 20 entries, with 160 fields.
+
+## Data Cleaning
+
+Not all of the variables within the datasets are needed for analysis, so the following steps were done to preprocess the datasets for modeling.
+
+First, the first 7 columns were removed, as they contained fields not important to modeling, such as indices, username, raw timestamps, and windows.
+
+``` {r remove columns}
+trainSet <- trainSet[,-c(1:7)]
+testSet <- testSet[,-c(1:7)]
+dim(trainSet)
+dim(testSet)
+```
+
+Then, columns that contained NA values were removed.
+``` {r remove columns NA}
+trainSet <- trainSet[, colSums(is.na(trainSet)) == 0] 
+testSet <- testSet[, colSums(is.na(testSet)) == 0] 
+dim(trainSet)
+dim(testSet)
+```
+
+Following that, columns that were not related to the accelerometer measurements, such as timestamps and such, were removed. Columns that were not numeric were also removed, though classe had to be preserved as it is the response variable.
+``` {r remove timestamps}
+classe <- trainSet$classe
+trainRemove <- grepl("^X|timestamp|window", names(trainSet))
+trainSet <- trainSet[, !trainRemove]
+trainProcessed <- trainSet[, sapply(trainSet, is.numeric)]
+trainProcessed$classe <- classe #Have to re-add that back in.
+
+testRemove <- grepl("^X|timestamp|window", names(testSet))
+testSet <- testSet[, !testRemove]
+testProcessed <- testSet[, sapply(testSet, is.numeric)]
+
+colnames(trainProcessed)
+colnames(testProcessed)
+dim(trainProcessed)
+dim(testProcessed)
+```
+After the removal of columns, both the training and test sets have 53 fields, with the training set having classe as its response variable.
+
+## Data Splitting
+
+As the datasets have been preprocessed, they can now be split into train and validation sets. The train set was split into a training set containing 70% of the training data, and a validation set containing 30% of the test data.
+
+``` {r train-test split}
+set.seed(22519) # For reproducibile purpose
+inTrain <- createDataPartition(trainProcessed$classe, p=0.70, list=F)
+trainData <- trainProcessed[inTrain, ]
+testData <- trainProcessed[-inTrain, ] #Different from TestProcessed earlier
+dim(trainData)
+dim(testData)
+```
+
+## Data Modeling
+
+To then build the model to predict the manner the exercise was done, three models were compared: Decision Tree, Generalized Boosted Model (GBM), and a Random Forest. To get the metrics to compare each, confusion matrices were used.
+
+### Decision Tree
+
+``` {r decisiontree}
+set.seed(0)
+exerciseDT <- rpart(classe ~ ., data = trainData, method="class")
+fancyRpartPlot(exerciseDT)
+```
+
+Performance of the Decision Tree:
+```{r DT perf}
+predictDT <- predict(exerciseDT, newdata = testData, type="class")
+confusionMatrixDT <- confusionMatrix(predictDT, as.factor(testData$classe))
+confusionMatrixDT
+```
+
+The accuracy of the Decision Tree is 0.7584, with its generalization error (out-of-sample error) being 0.2416.
+
+### Generalized Boosted Model (GBM)
+
+``` {r GBM}
+set.seed(0)
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 2)
+exerciseGBM  <- train(classe ~ ., data = trainData, method = "gbm",
+                  trControl = controlGBM, verbose = FALSE)
+exerciseGBM$finalModel
+```
+
+
+Performance of the Generalized Boosted Model (GBM):
+``` {r GBM perf}
+predictGBM <- predict(exerciseGBM, newdata = testData)
+confusionMatrixGBM <- confusionMatrix(predictGBM, as.factor(testData$classe))
+confusionMatrixGBM
+```
+
+The accuracy of the Generalized Boosted Model is 0.9662, with its generalization error (out-of-sample error) being 0.0338.
+
+### Random Forest
+
+``` {r randomforest}
+set.seed(0)
+controlRF <- trainControl(method = "repeatedcv", number = 5, repeats = 2)
+exerciseRF  <- train(classe ~ ., data = trainData, method = "rf",
+                 trControl = controlRF, verbose = FALSE)
+exerciseRF$finalModel
+```
+
+Performance of the Random Forest:
+``` {r RF perf}
+predictRF <- predict(exerciseRF, newdata = testData)
+confusionMatrixRF <- confusionMatrix(predictRF, as.factor(testData$classe))
+confusionMatrixRF
+```
+
+The accuracy of the Random Forest is 0.9939, with its generalization error (out-of-sample error) being 0.0061.
+
+## Conclusion and Predictions
+
+Of the three models, the best performing model is the Random Forest Model, with an accuracy of 0.9939 and a generalization error (out-of-sample error) being 0.0061.
+
+This model is then used to predict the labels of the test set.
+
+``` {r PredictRF Test}
+predictRFTest <- predict(exerciseRF, subset(testProcessed, select = -c(problem_id))) #Remove problem_id
+predictRFTest
+```
+
+
+## Acknowledgement:
+
+Data came from: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har
+
+
+
+
